@@ -1,0 +1,25 @@
+{
+  "name": "tool failure",
+  "description": "A failing tool emits tool_status failed; the model gets the error and the turn still completes.",
+  "agent": {"name": "conformance-agent", "version": "1.0.0", "model": "scripted", "instructions": "Follow the script."},
+  "tools": [{"name": "get_weather", "description": "Current weather for a city.", "input_schema": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"], "additionalProperties": false}, "error": "No weather data for 'Atlantis'"}],
+  "model_script": [
+    [{"tool_call": {"id": "tc1", "name": "get_weather", "arguments": {"city": "Atlantis"}}}],
+    [{"text": "I have no data for Atlantis."}]
+  ],
+  "requests": [
+    {
+      "conversation_id": "c1",
+      "body": {"message_id": "m1", "text": "Weather in Atlantis?"},
+      "expect": {
+        "status": 200,
+        "events": [
+          {"type": "tool_status", "data": {"tool_call_id": "tc1", "tool": "get_weather", "status": "started"}},
+          {"type": "tool_status", "data": {"tool_call_id": "tc1", "tool": "get_weather", "status": "failed"}},
+          {"type": "token", "data": {"text": "I have no data for Atlantis."}},
+          {"type": "turn_done", "data": {"stop_reason": "end_turn"}}
+        ]
+      }
+    }
+  ]
+}

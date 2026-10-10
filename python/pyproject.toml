@@ -1,0 +1,40 @@
+[project]
+name = "agent-platform"
+version = "0.1.0"
+description = "Agent platform, Python implementation: contracts, gateway, Agent SDK and transport"
+requires-python = ">=3.12"
+dependencies = ["ap-contracts", "ap-gateway", "ap-sdk", "ap-transport"]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["contracts", "gateway", "sdk", "transport"]
+
+[tool.uv.sources]
+ap-contracts = { workspace = true }
+ap-gateway = { workspace = true }
+ap-sdk = { workspace = true }
+ap-transport = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "datamodel-code-generator>=0.26",
+    "ruff>=0.6",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["gateway/tests", "sdk/tests", "transport/tests", "../agents"]
+addopts = "-m 'not live' --import-mode=importlib"
+pythonpath = ["transport/tests"]
+markers = ["live: calls the real model through the gateway (needs ANTHROPIC_API_KEY)"]
+
+[tool.ruff]
+line-length = 110
+extend-exclude = ["contracts/src/ap_contracts"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ap_contracts", "ap_gateway", "ap_sdk", "ap_transport", "conftest"]

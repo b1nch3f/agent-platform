@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-definition.schema.json",
+  "title": "AgentDefinition",
+  "description": "A versioned agent definition, loadable by any Agent SDK implementation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "version",
+    "model",
+    "instructions"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "default": ""
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A model name registered with the model gateway."
+    },
+    "instructions": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The system prompt."
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ToolRef"
+      },
+      "default": []
+    },
+    "callbacks": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null,
+      "description": "Locates the agent's callbacks in the SDK's language, e.g. 'tools:callbacks' for Python."
+    },
+    "max_steps": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 10,
+      "description": "Stop condition: model calls per invocation."
+    },
+    "max_tokens": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 4096,
+      "description": "Output token limit per model call."
+    }
+  },
+  "$defs": {
+    "ToolRef": {
+      "title": "ToolRef",
+      "description": "A tool the agent may call. 'function' locates the implementation in the SDK's language, e.g. 'tools:get_weather' for Python.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "function"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_-]*$"
+        },
+        "function": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

@@ -2,7 +2,7 @@
 
 A platform for building, shipping and running AI agents: nine subsystems plus Features on a shared data layer. Models and agents make decisions; the platform makes guarantees.
 
-The repo is at the start of the build. `docs/design/` is the source of truth for what each subsystem does; read the relevant file before changing a subsystem. Start with [docs/design/README.md](docs/design/README.md) and [00-overview.md](docs/design/00-overview.md).
+The MVP is being built slice by slice. `docs/design/` is the source of truth for what each subsystem does; read the relevant file before changing a subsystem. Start with [docs/design/README.md](docs/design/README.md) and [00-overview.md](docs/design/00-overview.md).
 
 ## Subsystem map
 
@@ -44,15 +44,21 @@ CDC is not built here. It comes from `../database-change-explorer` ([repo](https
 
 ## Layout
 
-Intended layout. Only `docs/` exists so far; create the others as the first slice in each lands.
+Python first; Java implementations of the transport and Agent SDK come later against the same contracts ([ADR 0002](docs/adr/0002-python-first-mvp.md)). Folders are named by language, and modules that must behave the same share a name on both sides.
 
 ```
-contracts/   JSON Schema, the single definition of every data model and cross-plane call;
-             Java classes and pydantic models are generated from it
-platform/    Gradle multi-module build, one module per platform-plane service
-agent/       uv workspace, one package per agent-plane component
-deploy/      Local environment on k3s (Helm charts or manifests)
-docs/        design/ (one file per subsystem) and adr/
+contracts/     JSON Schema, the single definition of every data model and wire format;
+               generate.sh produces the language models, which are committed
+python/        uv workspace
+  contracts/   generated pydantic models (ap_contracts) - do not edit
+  gateway/     pass-through model and tool gateway, Anthropic adapter, scripted fake model (ap_gateway)
+  sdk/         Agent SDK: runtime kernel, tools, callbacks, conversation store, test helpers (ap_sdk)
+  transport/   HTTP + SSE app, client, the agent-platform CLI (ap_transport)
+java/          Gradle multi-module, same module names - not created yet
+conformance/   language-neutral test cases every implementation must pass
+agents/        agent definitions (YAML) with their tools and tests
+deploy/        local environment on k3s - not created yet
+docs/          design/ (one file per subsystem) and adr/
 ```
 
 ## Rules every change must follow
@@ -70,17 +76,28 @@ Each subsystem's "Never does" column in [00-overview.md](docs/design/00-overview
 ## Workflow
 
 - **Plan before coding.** Read the subsystem's design file, state the slice and the plan, and get agreement before writing code.
-- **Tests with every change.** Java: JUnit with Testcontainers for anything touching Postgres or Kafka. Python: pytest. A change without tests is not done.
+- **Tests with every change.** Python: pytest with the scripted model. Java: JUnit, with Testcontainers for anything touching Postgres or Kafka. A change without tests is not done.
 - **One pull request per slice.** A slice is one thin, working path through one or more subsystems. Keep unrelated changes out.
 - **Contracts first.** When a slice crosses planes, change `contracts/` first, regenerate, then change both sides.
 
 ## Commands
 
-| Area | Build | Test |
-| --- | --- | --- |
-| `contracts/` | TODO (code generation) | TODO |
-| `platform/` | TODO (`./gradlew build` once the Gradle build exists) | TODO (`./gradlew test`) |
-| `agent/` | TODO (`uv sync` once the workspace exists) | TODO (`uv run pytest`) |
-| `deploy/` | TODO (bring up the local k3s environment) | — |
+Run from `python/` unless noted.
 
-Replace each TODO with the real command in the pull request that creates the module.
+| Task | Command |
+| --- | --- |
+| Install | `uv sync` |
+| Test (fake model, no API key) | `uv run pytest` |
+| One test file | `uv run pytest sdk/tests/test_runtime.py` |
+| Live test against the real model | `uv run pytest -m live` (needs `ANTHROPIC_API_KEY`; costs money) |
+| Lint and format | `uv run ruff check . ../agents` and `uv run ruff format . ../agents` |
+| Regenerate contract models | `./contracts/generate.sh` from the repo root, after any schema change |
+| Serve the example agent | `uv run agent-platform serve --agent ../agents/example/agent.yaml` |
+| Chat with it | `uv run agent-platform chat` |
+| `java/`, `deploy/` | TODO: add when the module is created |
+
+## Testing
+
+- Tests use `ScriptedModel`, a fake model that replays a script, through the helpers in `ap_sdk.testing`. See `agents/example/test_agent.py` for how to test an agent.
+- A behaviour that both languages must share goes in `conformance/` as data, not only in a Python test.
+- MVP gaps against the rules above are listed in ADR 0002; do not add new ones without updating it.

@@ -1,0 +1,374 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gateway.schema.json",
+  "title": "Gateway",
+  "description": "The single internal message and tool-call format between the runtime and the model and tool gateways. See docs/design/05-governance-and-security.md.",
+  "type": "object",
+  "$defs": {
+    "CallContext": {
+      "title": "CallContext",
+      "description": "Identifiers stamped on every gateway call.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenant",
+        "user_id",
+        "conversation_id",
+        "message_id",
+        "invocation_id",
+        "agent",
+        "agent_version"
+      ],
+      "properties": {
+        "tenant": {
+          "type": "string"
+        },
+        "user_id": {
+          "type": "string"
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "message_id": {
+          "type": "string"
+        },
+        "invocation_id": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "agent_version": {
+          "type": "string"
+        }
+      }
+    },
+    "TextBlock": {
+      "title": "TextBlock",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "text"
+      ],
+      "properties": {
+        "type": {
+          "const": "text",
+          "default": "text"
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    "ToolCallBlock": {
+      "title": "ToolCallBlock",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "name",
+        "arguments"
+      ],
+      "properties": {
+        "type": {
+          "const": "tool_call",
+          "default": "tool_call"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "object"
+        }
+      }
+    },
+    "ToolResultBlock": {
+      "title": "ToolResultBlock",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "tool_call_id",
+        "content"
+      ],
+      "properties": {
+        "type": {
+          "const": "tool_result",
+          "default": "tool_result"
+        },
+        "tool_call_id": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "is_error": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "ProviderBlock": {
+      "title": "ProviderBlock",
+      "description": "A provider-native content block the runtime does not interpret, such as reasoning. It is stored and sent back unchanged, in position, so the provider can continue the turn. Also emitted as a model stream event.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "provider",
+        "data"
+      ],
+      "properties": {
+        "type": {
+          "const": "provider",
+          "default": "provider"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object"
+        }
+      }
+    },
+    "Message": {
+      "title": "Message",
+      "description": "One conversation message. Tool results are user-role messages holding tool_result blocks.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "content"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "user",
+            "assistant"
+          ]
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/TextBlock"
+              },
+              {
+                "$ref": "#/$defs/ToolCallBlock"
+              },
+              {
+                "$ref": "#/$defs/ToolResultBlock"
+              },
+              {
+                "$ref": "#/$defs/ProviderBlock"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "ToolSpec": {
+      "title": "ToolSpec",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "description",
+        "input_schema"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "input_schema": {
+          "type": "object",
+          "description": "JSON Schema of the tool's arguments."
+        }
+      }
+    },
+    "ModelRequest": {
+      "title": "ModelRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context",
+        "model",
+        "system",
+        "messages",
+        "max_tokens"
+      ],
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/CallContext"
+        },
+        "model": {
+          "type": "string"
+        },
+        "system": {
+          "type": "string"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Message"
+          }
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolSpec"
+          },
+          "default": []
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "TextDelta": {
+      "title": "TextDelta",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "text"
+      ],
+      "properties": {
+        "type": {
+          "const": "text_delta",
+          "default": "text_delta"
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    "ToolCall": {
+      "title": "ToolCall",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "name",
+        "arguments"
+      ],
+      "properties": {
+        "type": {
+          "const": "tool_call",
+          "default": "tool_call"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "object"
+        }
+      }
+    },
+    "Usage": {
+      "title": "Usage",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      }
+    },
+    "ModelDone": {
+      "title": "ModelDone",
+      "description": "Last event of every model stream.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "stop_reason"
+      ],
+      "properties": {
+        "type": {
+          "const": "done",
+          "default": "done"
+        },
+        "stop_reason": {
+          "enum": [
+            "end_turn",
+            "tool_use",
+            "max_tokens",
+            "refusal",
+            "other"
+          ]
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        }
+      }
+    },
+    "ToolCallRequest": {
+      "title": "ToolCallRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context",
+        "tool_call_id",
+        "name",
+        "arguments"
+      ],
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/CallContext"
+        },
+        "tool_call_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "object"
+        }
+      }
+    },
+    "ToolCallResult": {
+      "title": "ToolCallResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool_call_id",
+        "content"
+      ],
+      "properties": {
+        "tool_call_id": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "is_error": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
+  }
+}

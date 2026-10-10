@@ -1,0 +1,36 @@
+{
+  "name": "two turns and a duplicate",
+  "description": "The cursor continues across turns of one conversation. A repeated message_id is rejected with 409 and runs nothing.",
+  "agent": {"name": "conformance-agent", "version": "1.0.0", "model": "scripted", "instructions": "Follow the script."},
+  "tools": [],
+  "model_script": [[{"text": "One."}], [{"text": "Two."}]],
+  "requests": [
+    {
+      "conversation_id": "c1",
+      "body": {"message_id": "m1", "text": "First"},
+      "expect": {
+        "status": 200,
+        "events": [
+          {"type": "token", "data": {"text": "One."}},
+          {"type": "turn_done", "data": {"stop_reason": "end_turn"}}
+        ]
+      }
+    },
+    {
+      "conversation_id": "c1",
+      "body": {"message_id": "m1", "text": "First, sent again"},
+      "expect": {"status": 409}
+    },
+    {
+      "conversation_id": "c1",
+      "body": {"message_id": "m2", "text": "Second"},
+      "expect": {
+        "status": 200,
+        "events": [
+          {"type": "token", "data": {"text": "Two."}},
+          {"type": "turn_done", "data": {"stop_reason": "end_turn"}}
+        ]
+      }
+    }
+  ]
+}

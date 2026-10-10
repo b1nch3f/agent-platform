@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "turn-envelope.schema.json",
+  "title": "TurnEnvelope",
+  "description": "One inbound turn, normalized by the transport from any protocol. See docs/design/03-transport.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["message_id", "conversation_id", "session_id", "invocation_id", "protocol", "identity", "kind", "payload"],
+  "properties": {
+    "message_id": { "type": "string", "minLength": 1, "description": "Client-generated; deduplicates double-sends." },
+    "conversation_id": { "type": "string", "minLength": 1 },
+    "session_id": { "type": "string", "minLength": 1, "description": "The device connection the turn arrived on." },
+    "invocation_id": { "type": "string", "minLength": 1, "description": "Top-level run for this message." },
+    "protocol": { "enum": ["websocket", "http_sse", "a2a", "kafka"] },
+    "identity": { "$ref": "#/$defs/CallIdentity" },
+    "kind": { "enum": ["message", "decision", "cancel"] },
+    "payload": { "type": "object", "description": "Text and attachments, or action_id and decision." },
+    "a2a_task_id": { "type": ["string", "null"], "default": null }
+  },
+  "$defs": {
+    "CallIdentity": {
+      "title": "CallIdentity",
+      "description": "The user or calling agent, and its tenant.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenant", "user_id"],
+      "properties": {
+        "tenant": { "type": "string", "minLength": 1 },
+        "user_id": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
