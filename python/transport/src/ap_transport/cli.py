@@ -34,8 +34,8 @@ def serve(args: argparse.Namespace) -> None:
     from ap_sdk import InMemoryConversationStore, Runtime, load_agent
     from ap_transport.app import create_app
 
-    # Nearest .env from the current directory upwards. Variables already set in the shell win.
-    load_dotenv(find_dotenv(usecwd=True))
+    # Nearest .env from the current directory upwards. It wins over variables set in the shell.
+    load_dotenv(find_dotenv(usecwd=True), override=True)
 
     handler = logging.StreamHandler()
     handler.setFormatter(JsonFormatter())
