@@ -27,11 +27,15 @@ class JsonFormatter(logging.Formatter):
 
 def serve(args: argparse.Namespace) -> None:
     import uvicorn
+    from dotenv import find_dotenv, load_dotenv
 
     from ap_gateway import ModelGateway, ToolGateway
     from ap_gateway.anthropic_adapter import AnthropicAdapter
     from ap_sdk import InMemoryConversationStore, Runtime, load_agent
     from ap_transport.app import create_app
+
+    # Nearest .env from the current directory upwards. Variables already set in the shell win.
+    load_dotenv(find_dotenv(usecwd=True))
 
     handler = logging.StreamHandler()
     handler.setFormatter(JsonFormatter())
