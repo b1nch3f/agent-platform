@@ -1,0 +1,21 @@
+{
+  "name": "text turn",
+  "description": "A reply with no tool calls streams one token event per model text delta, then turn_done.",
+  "agent": {"name": "conformance-agent", "version": "1.0.0", "model": "scripted", "instructions": "Follow the script."},
+  "tools": [],
+  "model_script": [[{"text": "Hello"}, {"text": ", world."}]],
+  "requests": [
+    {
+      "conversation_id": "c1",
+      "body": {"message_id": "m1", "text": "Hi"},
+      "expect": {
+        "status": 200,
+        "events": [
+          {"type": "token", "data": {"text": "Hello"}},
+          {"type": "token", "data": {"text": ", world."}},
+          {"type": "turn_done", "data": {"stop_reason": "end_turn"}}
+        ]
+      }
+    }
+  ]
+}

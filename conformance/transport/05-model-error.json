@@ -1,0 +1,20 @@
+{
+  "name": "model error",
+  "description": "If the model call fails mid-stream, events already produced are delivered and the stream ends with an error event, not turn_done.",
+  "agent": {"name": "conformance-agent", "version": "1.0.0", "model": "scripted", "instructions": "Follow the script."},
+  "tools": [],
+  "model_script": [[{"text": "Starting"}, {"error": "provider unavailable"}]],
+  "requests": [
+    {
+      "conversation_id": "c1",
+      "body": {"message_id": "m1", "text": "Hi"},
+      "expect": {
+        "status": 200,
+        "events": [
+          {"type": "token", "data": {"text": "Starting"}},
+          {"type": "error"}
+        ]
+      }
+    }
+  ]
+}

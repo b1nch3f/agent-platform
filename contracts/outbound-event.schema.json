@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "outbound-event.schema.json",
+  "title": "OutboundEvent",
+  "description": "One event streamed back to the client. See docs/design/03-transport.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["conversation_id", "message_id", "cursor", "type", "data"],
+  "properties": {
+    "conversation_id": { "type": "string", "minLength": 1 },
+    "message_id": { "type": "string", "minLength": 1 },
+    "invocation_id": { "type": ["string", "null"], "default": null },
+    "cursor": { "type": "integer", "minimum": 1, "description": "Increases monotonically per conversation." },
+    "type": { "enum": ["token", "tool_status", "pending_updated", "approval_request", "turn_done", "error"] },
+    "data": { "type": "object" }
+  }
+}

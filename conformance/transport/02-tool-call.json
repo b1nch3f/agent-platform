@@ -1,0 +1,26 @@
+{
+  "name": "tool call",
+  "description": "A tool call emits tool_status started then completed between the model's two replies.",
+  "agent": {"name": "conformance-agent", "version": "1.0.0", "model": "scripted", "instructions": "Follow the script."},
+  "tools": [{"name": "get_weather", "description": "Current weather for a city.", "input_schema": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"], "additionalProperties": false}, "result": "{\"temperature_c\": 29}"}],
+  "model_script": [
+    [{"text": "Let me check. "}, {"tool_call": {"id": "tc1", "name": "get_weather", "arguments": {"city": "Pune"}}}],
+    [{"text": "It is 29°C in Pune."}]
+  ],
+  "requests": [
+    {
+      "conversation_id": "c1",
+      "body": {"message_id": "m1", "text": "Weather in Pune?"},
+      "expect": {
+        "status": 200,
+        "events": [
+          {"type": "token", "data": {"text": "Let me check. "}},
+          {"type": "tool_status", "data": {"tool_call_id": "tc1", "tool": "get_weather", "status": "started"}},
+          {"type": "tool_status", "data": {"tool_call_id": "tc1", "tool": "get_weather", "status": "completed"}},
+          {"type": "token", "data": {"text": "It is 29°C in Pune."}},
+          {"type": "turn_done", "data": {"stop_reason": "end_turn"}}
+        ]
+      }
+    }
+  ]
+}
