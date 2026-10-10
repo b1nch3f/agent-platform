@@ -10,11 +10,11 @@
 | Vector index | Knowledge chunks, embeddings and access lists | Knowledge ingestion, permission sync |
 | Secret vault | Provider keys, client secrets, refresh tokens and connector credentials; definitions hold only references | Identity provider, model gateway registration |
 | SQL DB: feature tables | Icebreaker questions | Icebreaker generator only |
-| Redis (optional) | Cached pending-frame lookups; never authoritative | Runtime |
+| Cache (optional) | Cached pending-frame lookups; never authoritative | Runtime |
 | Telemetry stores | Traces, metrics, logs | Collector |
 | Audit log | Accountable decisions | All subsystems |
 
-Removed during design: Kafka, a graph database, Redis-first frame tiering, and LiteLLM.
+Removed during design: a graph database, Redis-first frame tiering, and LiteLLM. Kafka is the event bus: background-agent ingress and egress (see [Transport](03-transport.md)) and change data capture (see [Features](10-features.md)).
 
 ## Shared identifiers
 
