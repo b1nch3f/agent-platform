@@ -23,6 +23,8 @@ from ap_contracts import (
 
 PROVIDER = "anthropic"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+# Models the API can re-run a declined request for. Others, such as Haiku, have no server-side fallback.
+FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
 _STOP_REASONS = {"end_turn", "tool_use", "max_tokens", "refusal"}
 
 
@@ -59,7 +61,7 @@ class AnthropicAdapter:
 
     def __init__(self, client: AsyncAnthropic | None = None, *, refusal_fallback: bool = True):
         """`refusal_fallback` lets the API re-run a request its safety classifiers declined on
-        Anthropic's recommended fallback model, inside the same call."""
+        Anthropic's recommended fallback model, inside the same call, for models that support it."""
         # MVP: the client reads ANTHROPIC_API_KEY from the environment. This becomes a vault
         # reference resolved by the credential service (docs/adr/0002).
         self._client = client or AsyncAnthropic()
@@ -84,11 +86,14 @@ class AnthropicAdapter:
                 }
                 for tool in request.tools
             ]
-        if self._refusal_fallback:
+        if self._refusal_fallback and request.model in FALLBACK_MODELS:
             params["betas"] = [FALLBACK_BETA]
             params["fallbacks"] = "default"
+            open_stream = self._client.beta.messages.stream
+        else:
+            open_stream = self._client.messages.stream
 
-        async with self._client.beta.messages.stream(**params) as stream:
+        async with open_stream(**params) as stream:
             async for event in stream:
                 if event.type == "text":
                     yield TextDelta(text=event.text)

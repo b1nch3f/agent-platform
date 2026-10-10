@@ -15,7 +15,11 @@ EXAMPLE_AGENT = Path(__file__).parents[3] / "agents" / "example" / "agent.yaml"
 
 @pytest.mark.live
 async def test_example_agent_answers_with_the_real_model():
+    from dotenv import find_dotenv, load_dotenv
+
     from ap_gateway.anthropic_adapter import AnthropicAdapter
+
+    load_dotenv(find_dotenv(usecwd=True), override=True)  # same key the server uses
 
     runtime = Runtime(
         agent=load_agent(EXAMPLE_AGENT),

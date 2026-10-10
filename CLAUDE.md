@@ -89,7 +89,7 @@ Run from `python/` unless noted.
 | Install | `uv sync` |
 | Test (fake model, no API key) | `uv run pytest` |
 | One test file | `uv run pytest sdk/tests/test_runtime.py` |
-| Live test against the real model | `uv run pytest -m live` (needs `ANTHROPIC_API_KEY`; costs money) |
+| Live test against the real model | `uv run pytest -m live` (key from `python/.env`; costs money) |
 | Lint and format | `uv run ruff check . ../agents` and `uv run ruff format . ../agents` |
 | Regenerate contract models | `./contracts/generate.sh` from the repo root, after any schema change |
 | Serve the example agent | `uv run agent-platform serve --agent ../agents/example/agent.yaml` |
