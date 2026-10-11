@@ -63,7 +63,7 @@ class TurnEnvelope(BaseModel):
     conversation_id: str
     session_id: str            # the device connection it arrived on
     invocation_id: str         # top-level run for this message
-    protocol: Literal["websocket", "http_sse", "a2a", "kafka"]
+    protocol: Literal["websocket", "http_sse", "a2a", "kafka", "local"]
     identity: CallIdentity     # user or calling agent, tenant
     kind: Literal["message", "decision", "cancel"]
     payload: dict              # text and attachments, or action_id and decision
@@ -92,6 +92,8 @@ class OutboundEvent(BaseModel):
 A remote agent answers an input-required task by sending a message on the same task. The transport turns it into a turn envelope, and step matching in the turn router applies as usual.
 
 ## Key flows
+
+**Local turn, no protocol.** The same transport core can be called in-process, with no network in between: a terminal client hands it the user's text and reads the events back directly. Identifiers, deduplication, cursors and event order are identical to a network turn; only `protocol` differs (`local`). This is how an agent runs on a user's own machine, with its tools acting there.
 
 **Inbound turn, any protocol.** Connect → session binding (token, tenant, entitlement) → normalize into a `TurnEnvelope` → runtime → events streamed back over the same connection.
 

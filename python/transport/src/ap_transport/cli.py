@@ -1,4 +1,8 @@
-"""agent-platform: serve an agent over HTTP + SSE, or chat with one from the terminal."""
+"""agent-platform: run an agent locally in the terminal, or serve it over HTTP + SSE.
+
+agent-platform chat  --agent agent.yaml    the agent runs in this process; you talk to it directly
+agent-platform serve --agent agent.yaml    the agent runs as a server; use curl, Postman or a frontend
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,11 @@ import argparse
 import json
 import logging
 import sys
+from collections.abc import Callable, Iterator
+from typing import Protocol, TextIO
+
+from ap_contracts import OutboundEvent
+from ap_sdk import Runtime
 
 # Fields every LogRecord has; anything else was passed as `extra` and is part of the log line.
 _STANDARD = set(logging.makeLogRecord({}).__dict__) | {"message", "asctime", "color_message"}
@@ -25,82 +34,106 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(line, default=str)
 
 
-def serve(args: argparse.Namespace) -> None:
-    import uvicorn
+def configure_logging(handler: logging.Handler) -> None:
+    handler.setFormatter(JsonFormatter())
+    logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
+    for noisy in ("httpx", "httpx2"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+def build_runtime(agent_path: str) -> Runtime:
+    """Wire an agent to the real model. Both commands run the agent through this."""
     from dotenv import find_dotenv, load_dotenv
 
     from ap_gateway import ModelGateway, ToolGateway
     from ap_gateway.anthropic_adapter import AnthropicAdapter
-    from ap_sdk import InMemoryConversationStore, Runtime, load_agent
-    from ap_transport.app import create_app
+    from ap_sdk import InMemoryConversationStore, load_agent
 
     # Nearest .env from the current directory upwards. It wins over variables set in the shell.
     load_dotenv(find_dotenv(usecwd=True), override=True)
 
-    handler = logging.StreamHandler()
-    handler.setFormatter(JsonFormatter())
-    logging.basicConfig(level=logging.INFO, handlers=[handler])
-    for noisy in ("httpx", "httpx2"):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
-
-    runtime = Runtime(
-        agent=load_agent(args.agent),
+    return Runtime(
+        agent=load_agent(agent_path),
         model_gateway=ModelGateway(default=AnthropicAdapter()),
         tool_gateway=ToolGateway(),
         store=InMemoryConversationStore(),
     )
-    uvicorn.run(create_app(runtime), host=args.host, port=args.port, log_config=None)
 
 
-def chat(args: argparse.Namespace) -> None:
-    import httpx
+def serve(args: argparse.Namespace) -> None:
+    import uvicorn
 
-    from ap_transport.client import Client
+    from ap_transport.app import create_app
 
-    client = Client(args.url)
-    try:
-        conversation_id = args.conversation or client.create_conversation()
-    except httpx.HTTPError as exc:
-        sys.exit(f"Cannot reach {args.url}: {exc}")
-    print(f"conversation {conversation_id}  (Ctrl-D to quit)")
+    configure_logging(logging.StreamHandler())
+    uvicorn.run(create_app(build_runtime(args.agent)), host=args.host, port=args.port, log_config=None)
 
+
+class ChatClient(Protocol):
+    def create_conversation(self) -> str: ...
+    def send(self, conversation_id: str, text: str) -> Iterator[OutboundEvent]: ...
+
+
+def run_chat(client: ChatClient, *, read: Callable[[str], str] = input, out: TextIO = sys.stdout) -> None:
+    """The terminal conversation loop: read a line, run the turn, print events as they arrive."""
+
+    def show(text: str) -> None:
+        out.write(text)
+        out.flush()
+
+    conversation_id = client.create_conversation()
     while True:
         try:
-            text = input("\nyou> ").strip()
+            text = read("\nyou> ").strip()
         except (EOFError, KeyboardInterrupt):
-            print()
+            show("\n")
             return
         if not text:
             continue
-        print("agent> ", end="", flush=True)
+        show("agent> ")
         for event in client.send(conversation_id, text):
             if event.type == "token":
-                print(event.data["text"], end="", flush=True)
+                show(event.data["text"])
             elif event.type == "tool_status":
-                print(f"\n  [{event.data['tool']}: {event.data['status']}]", end="", flush=True)
+                show(f"\n  [{event.data['tool']}: {event.data['status']}]")
                 if event.data["status"] != "started":
-                    print("\n", end="", flush=True)
+                    show("\n")
             elif event.type == "error":
-                print(f"\n  [error: {event.data['message']}]", end="", flush=True)
+                show(f"\n  [error: {event.data['message']}]")
             elif event.type == "turn_done" and event.data.get("trace_id"):
-                print(f"\n  [trace {event.data['trace_id']}]", end="", flush=True)
-        print()
+                show(f"\n  [trace {event.data['trace_id']}]")
+        show("\n")
+
+
+def chat(args: argparse.Namespace) -> None:
+    from ap_transport.local import LocalClient
+
+    # Logs would land in the middle of the conversation, so they go to a file or nowhere.
+    configure_logging(logging.FileHandler(args.log_file) if args.log_file else logging.NullHandler())
+    runtime = build_runtime(args.agent)
+    agent = runtime.root_agent
+    print(f"{agent.name} {agent.version} ({agent.definition.model}), running locally. Ctrl-D to quit.")
+    client = LocalClient(runtime)
+    try:
+        run_chat(client)
+    finally:
+        client.close()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="agent-platform")
+    parser = argparse.ArgumentParser(prog="agent-platform", description=__doc__.split("\n")[0])
     commands = parser.add_subparsers(required=True)
+
+    chat_parser = commands.add_parser("chat", help="Run an agent in this process and talk to it")
+    chat_parser.add_argument("--agent", required=True, help="Path to the agent definition (YAML)")
+    chat_parser.add_argument("--log-file", help="Write JSON logs to this file (default: no logs)")
+    chat_parser.set_defaults(run=chat)
 
     serve_parser = commands.add_parser("serve", help="Serve an agent over HTTP + SSE")
     serve_parser.add_argument("--agent", required=True, help="Path to the agent definition (YAML)")
     serve_parser.add_argument("--host", default="127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=8000)
     serve_parser.set_defaults(run=serve)
-
-    chat_parser = commands.add_parser("chat", help="Chat with a served agent")
-    chat_parser.add_argument("--url", default="http://localhost:8000")
-    chat_parser.add_argument("--conversation", help="Continue an existing conversation")
-    chat_parser.set_defaults(run=chat)
 
     args = parser.parse_args()
     args.run(args)

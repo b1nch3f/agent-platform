@@ -11,7 +11,7 @@
     "conversation_id": { "type": "string", "minLength": 1 },
     "session_id": { "type": "string", "minLength": 1, "description": "The device connection the turn arrived on." },
     "invocation_id": { "type": "string", "minLength": 1, "description": "Top-level run for this message." },
-    "protocol": { "enum": ["websocket", "http_sse", "a2a", "kafka"] },
+    "protocol": { "enum": ["websocket", "http_sse", "a2a", "kafka", "local"], "description": "'local' is an in-process turn with no network protocol, as in the terminal chat." },
     "identity": { "$ref": "#/$defs/CallIdentity" },
     "kind": { "enum": ["message", "decision", "cancel"] },
     "payload": { "type": "object", "description": "Text and attachments, or action_id and decision." },

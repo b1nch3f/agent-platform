@@ -53,7 +53,7 @@ python/        uv workspace
   contracts/   generated pydantic models (ap_contracts) - do not edit
   gateway/     pass-through model and tool gateway, Anthropic adapter, scripted fake model (ap_gateway)
   sdk/         Agent SDK: runtime kernel, tools, callbacks, conversation store, test helpers (ap_sdk)
-  transport/   HTTP + SSE app, client, the agent-platform CLI (ap_transport)
+  transport/   protocol-independent dispatcher, HTTP + SSE app, in-process client, agent-platform CLI (ap_transport)
 java/          Gradle multi-module, same module names - not created yet
 conformance/   language-neutral test cases every implementation must pass
 agents/        agent definitions (YAML) with their tools and tests
@@ -92,8 +92,8 @@ Run from `python/` unless noted.
 | Live test against the real model | `uv run pytest -m live` (key from `python/.env`; costs money) |
 | Lint and format | `uv run ruff check . ../agents` and `uv run ruff format . ../agents` |
 | Regenerate contract models | `./contracts/generate.sh` from the repo root, after any schema change |
-| Serve the example agent | `uv run agent-platform serve --agent ../agents/example/agent.yaml` |
-| Chat with it | `uv run agent-platform chat` |
+| Run an agent locally and talk to it | `uv run agent-platform chat --agent ../agents/example/agent.yaml` |
+| Serve an agent over HTTP + SSE | `uv run agent-platform serve --agent ../agents/example/agent.yaml` (use curl, Postman or a frontend) |
 | `java/`, `deploy/` | TODO: add when the module is created |
 
 ## Testing
