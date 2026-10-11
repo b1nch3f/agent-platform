@@ -22,7 +22,9 @@ class TurnEnvelope(BaseModel):
     conversation_id: constr(min_length=1)
     session_id: constr(min_length=1) = Field(..., description="The device connection the turn arrived on.")
     invocation_id: constr(min_length=1) = Field(..., description="Top-level run for this message.")
-    protocol: Literal["websocket", "http_sse", "a2a", "kafka"]
+    protocol: Literal["websocket", "http_sse", "a2a", "kafka", "local"] = Field(
+        ..., description="'local' is an in-process turn with no network protocol, as in the terminal chat."
+    )
     identity: CallIdentity
     kind: Literal["message", "decision", "cancel"]
     payload: dict[str, Any] = Field(..., description="Text and attachments, or action_id and decision.")

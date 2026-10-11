@@ -7,6 +7,8 @@ import pytest
 
 from ap_contracts import AgentDefinition, ToolSpec
 from ap_sdk import Agent
+from ap_sdk.testing import scripted_runtime
+from ap_transport.local import DuplicateMessage, LocalClient
 from conftest import make_client
 
 CASES = sorted((Path(__file__).parents[3] / "conformance" / "transport").glob("*.json"))
@@ -43,14 +45,48 @@ def test_cases_exist():
     assert CASES, "no conformance cases found"
 
 
-@pytest.mark.parametrize("path", CASES, ids=lambda p: p.stem)
-async def test_transport_conformance(path: Path):
-    case = json.loads(path.read_text())
+def agent_for(case: dict) -> Agent:
     tools = [StubTool(t) for t in case["tools"]]
     definition = AgentDefinition(
         **case["agent"], tools=[{"name": t.name, "function": f"stub:{t.name}"} for t in tools]
     )
-    client, _, _ = make_client(case["model_script"], Agent(definition=definition, tools=tools))
+    return Agent(definition=definition, tools=tools)
+
+
+@pytest.mark.parametrize("path", CASES, ids=lambda p: p.stem)
+def test_local_conformance(path: Path):
+    """The same cases through the in-process client: no HTTP, so 409 is DuplicateMessage."""
+    case = json.loads(path.read_text())
+    runtime, _ = scripted_runtime(agent_for(case), case["model_script"])
+    client = LocalClient(runtime)
+    cursors: dict[str, int] = {}
+
+    for request in case["requests"]:
+        conversation_id, body, expect = request["conversation_id"], request["body"], request["expect"]
+        try:
+            events = list(client.send(conversation_id, body["text"], message_id=body["message_id"]))
+        except DuplicateMessage:
+            assert expect["status"] == 409
+            continue
+
+        assert expect["status"] == 200
+        actual = []
+        for event in events:
+            actual.append(
+                {"type": event.type} if event.type == "error" else {"type": event.type, "data": event.data}
+            )
+            cursors[conversation_id] = cursors.get(conversation_id, 0) + 1
+            assert event.cursor == cursors[conversation_id]
+            assert (event.conversation_id, event.message_id) == (conversation_id, body["message_id"])
+        assert actual == expect["events"]
+        invocation_ids = {event.invocation_id for event in events}
+        assert len(invocation_ids) == 1 and all(invocation_ids)
+
+
+@pytest.mark.parametrize("path", CASES, ids=lambda p: p.stem)
+async def test_transport_conformance(path: Path):
+    case = json.loads(path.read_text())
+    client, _, _ = make_client(case["model_script"], agent_for(case))
     cursors: dict[str, int] = {}
 
     for request in case["requests"]:

@@ -32,20 +32,38 @@ class UnknownModelError(LookupError):
     pass
 
 
+class ModelResolver(Protocol):
+    def resolve(self, name: str) -> tuple[ModelAdapter, str]:
+        """The adapter for a model name, and the provider's own id for that model."""
+        ...
+
+
 class ModelGateway:
-    def __init__(self, adapters: dict[str, ModelAdapter] | None = None, default: ModelAdapter | None = None):
-        """`adapters` maps a model name to its adapter; `default` serves any other model."""
+    def __init__(
+        self,
+        registry: ModelResolver | None = None,
+        *,
+        adapters: dict[str, ModelAdapter] | None = None,
+        default: ModelAdapter | None = None,
+    ):
+        """Models are looked up in `registry`. Without one, `adapters` maps a model name to its
+        adapter and `default` serves any other model, which is how tests plug in a fake model."""
+        self._registry = registry
         self._adapters = dict(adapters or {})
         self._default = default
 
-    def _adapter_for(self, model: str) -> ModelAdapter:
+    def _resolve(self, model: str) -> tuple[ModelAdapter, str]:
+        if self._registry is not None:
+            return self._registry.resolve(model)
         adapter = self._adapters.get(model, self._default)
         if adapter is None:
             raise UnknownModelError(f"No adapter registered for model '{model}'")
-        return adapter
+        return adapter, model
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
-        adapter = self._adapter_for(request.model)
+        adapter, provider_model = self._resolve(request.model)
+        if provider_model != request.model:
+            request = request.model_copy(update={"model": provider_model})
         ctx = request.context
         # Span and attribute names follow the OpenTelemetry GenAI semantic conventions.
         with tracer.start_as_current_span(f"chat {request.model}", kind=trace.SpanKind.CLIENT) as span:

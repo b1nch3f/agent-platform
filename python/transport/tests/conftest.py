@@ -5,7 +5,6 @@ from ap_contracts import AgentDefinition, OutboundEvent
 from ap_sdk import Agent
 from ap_sdk.testing import scripted_runtime
 from ap_transport.app import create_app
-from ap_transport.client import parse_sse
 
 
 def make_client(turns, agent: Agent | None = None):
@@ -19,7 +18,12 @@ def make_client(turns, agent: Agent | None = None):
 
 
 def events_of(response: httpx.Response) -> list[OutboundEvent]:
-    return list(parse_sse(iter(response.text.split("\n"))))
+    """The OutboundEvents in a Server-Sent Events response body."""
+    return [
+        OutboundEvent.model_validate_json(line[5:].lstrip(" "))
+        for line in response.text.split("\n")
+        if line.startswith("data:")
+    ]
 
 
 @pytest.fixture
