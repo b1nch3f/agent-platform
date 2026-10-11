@@ -71,7 +71,7 @@ def serve(args: argparse.Namespace) -> None:
 
 
 class ChatClient(Protocol):
-    def create_conversation(self) -> str: ...
+    def start(self, text: str) -> tuple[str, Iterator[OutboundEvent]]: ...
     def send(self, conversation_id: str, text: str) -> Iterator[OutboundEvent]: ...
 
 
@@ -82,7 +82,7 @@ def run_chat(client: ChatClient, *, read: Callable[[str], str] = input, out: Tex
         out.write(text)
         out.flush()
 
-    conversation_id = client.create_conversation()
+    conversation_id: str | None = None  # issued with the first message
     while True:
         try:
             text = read("\nyou> ").strip()
@@ -93,7 +93,11 @@ def run_chat(client: ChatClient, *, read: Callable[[str], str] = input, out: Tex
             continue
         show("agent> ")
         after_note = False  # the last thing printed was a bracketed note on its own line
-        for event in client.send(conversation_id, text):
+        if conversation_id is None:
+            conversation_id, events = client.start(text)
+        else:
+            events = client.send(conversation_id, text)
+        for event in events:
             if event.type == "token":
                 show(("\n" if after_note else "") + event.data["text"])
                 after_note = False

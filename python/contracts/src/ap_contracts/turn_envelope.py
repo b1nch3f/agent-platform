@@ -19,9 +19,9 @@ class TurnEnvelope(BaseModel):
         extra="forbid",
     )
     message_id: constr(min_length=1) = Field(..., description="Client-generated; deduplicates double-sends.")
-    conversation_id: constr(min_length=1)
-    session_id: constr(min_length=1) = Field(..., description="The device connection the turn arrived on.")
-    invocation_id: constr(min_length=1) = Field(..., description="Top-level run for this message.")
+    conversation_id: constr(min_length=1) = Field(
+        ..., description="Issued by the transport when the conversation starts."
+    )
     protocol: Literal["websocket", "http_sse", "a2a", "kafka", "local"] = Field(
         ..., description="'local' is an in-process turn with no network protocol, as in the terminal chat."
     )

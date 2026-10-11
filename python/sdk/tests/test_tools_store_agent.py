@@ -4,7 +4,14 @@ import pytest
 from pydantic import ValidationError
 
 from ap_contracts import Message, TextBlock
-from ap_sdk import Callbacks, DuplicateMessageError, InMemoryConversationStore, load_agent, tool
+from ap_sdk import (
+    Callbacks,
+    DuplicateMessageError,
+    InMemoryConversationStore,
+    UnknownConversationError,
+    load_agent,
+    tool,
+)
 
 
 def test_tool_schema_comes_from_the_signature_and_docstring():
@@ -52,8 +59,18 @@ def message(text: str) -> Message:
     return Message(role="user", content=[TextBlock(text=text)])
 
 
-async def test_store_appends_in_order_and_returns_sequence_numbers():
+OWNER = {"tenant": "t1", "user_id": "u1"}
+
+
+async def new_store(*conversation_ids: str) -> InMemoryConversationStore:
     store = InMemoryConversationStore()
+    for conversation_id in conversation_ids:
+        await store.create(conversation_id, **OWNER)
+    return store
+
+
+async def test_store_appends_in_order_and_returns_sequence_numbers():
+    store = await new_store("c1")
 
     assert await store.append("c1", message("a"), message_id="m1") == 1
     assert await store.append("c1", message("b")) == 2
@@ -62,7 +79,7 @@ async def test_store_appends_in_order_and_returns_sequence_numbers():
 
 
 async def test_store_rejects_a_repeated_message_id_per_conversation():
-    store = InMemoryConversationStore()
+    store = await new_store("c1", "c2")
     await store.append("c1", message("a"), message_id="m1")
 
     with pytest.raises(DuplicateMessageError):
@@ -73,12 +90,35 @@ async def test_store_rejects_a_repeated_message_id_per_conversation():
 
 
 async def test_store_returns_copies():
-    store = InMemoryConversationStore()
+    store = await new_store("c1")
     await store.append("c1", message("a"))
 
     (await store.load("c1"))[0].content[0].text = "changed"
 
     assert (await store.load("c1"))[0].content[0].text == "a"
+
+
+async def test_conversation_must_be_created_before_messages_are_appended():
+    store = InMemoryConversationStore()
+
+    with pytest.raises(UnknownConversationError):
+        await store.append("never-created", message("a"))
+
+
+async def test_conversation_exists_only_for_the_caller_who_started_it():
+    store = await new_store("c1")
+
+    assert await store.exists("c1", **OWNER)
+    assert not await store.exists("c1", tenant="t1", user_id="someone-else")
+    assert not await store.exists("c1", tenant="other-tenant", user_id="u1")
+    assert not await store.exists("c2", **OWNER)
+
+
+async def test_conversation_cannot_be_created_twice():
+    store = await new_store("c1")
+
+    with pytest.raises(ValueError, match="already exists"):
+        await store.create("c1", **OWNER)
 
 
 def write_agent(tmp_path: Path, yaml_text: str, tools_py: str) -> Path:

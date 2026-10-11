@@ -12,7 +12,13 @@ class OutboundEvent(BaseModel):
     )
     conversation_id: constr(min_length=1)
     message_id: constr(min_length=1)
-    invocation_id: str | None = None
+    invocation_id: str | None = Field(
+        default=None,
+        description="The run that produced the event, created by the runtime. Null for an event produced before any run started.",
+    )
+    invocation_type: Literal["agent", "workflow"] | None = Field(
+        default=None, description="What that invocation runs. Null when invocation_id is null."
+    )
     cursor: conint(ge=1) = Field(..., description="Increases monotonically per conversation.")
     type: Literal["token", "tool_status", "pending_updated", "approval_request", "turn_done", "error"]
     data: dict[str, Any]

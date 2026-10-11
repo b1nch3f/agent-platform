@@ -20,16 +20,16 @@ async def test_example_agent_answers_with_the_real_model():
     runtime = build_runtime(str(EXAMPLE_AGENT), str(MODELS))
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(runtime)), base_url="http://test")
 
-    first = events_of(
-        await client.post(
-            "/conversations/live/messages",
-            json={"message_id": "m1", "text": "What is the weather in Pune right now?"},
-            timeout=120,
-        )
+    started = await client.post(
+        "/conversations",
+        json={"message_id": "m1", "text": "What is the weather in Pune right now?"},
+        timeout=120,
     )
+    conversation_id = started.headers["x-conversation-id"]
+    first = events_of(started)
     second = events_of(
         await client.post(
-            "/conversations/live/messages",
+            f"/conversations/{conversation_id}/messages",
             json={"message_id": "m2", "text": "Which city did I just ask about? One word."},
             timeout=120,
         )

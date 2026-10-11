@@ -4,15 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 
 from ap_contracts import OutboundEvent
 from ap_sdk import Runtime
 from ap_transport.dispatcher import Dispatcher
-
-
-class DuplicateMessage(Exception):
-    """This message_id was already sent in the conversation."""
 
 
 class LocalClient:
@@ -24,16 +20,27 @@ class LocalClient:
         # The runtime is async; this client is not. It owns one event loop and drives it per event.
         self._loop = asyncio.new_event_loop()
 
-    def create_conversation(self) -> str:
-        return self._dispatcher.new_conversation_id()
+    def start(self, text: str, *, message_id: str | None = None) -> tuple[str, Iterator[OutboundEvent]]:
+        """Start a conversation with its first message. Returns the new conversation_id and the
+        turn's events. A message_id is generated if not given."""
+        conversation_id, events = self._loop.run_until_complete(
+            self._dispatcher.start(message_id or uuid.uuid4().hex, text)
+        )
+        return conversation_id, self._drain(events)
 
     def send(
         self, conversation_id: str, text: str, *, message_id: str | None = None
     ) -> Iterator[OutboundEvent]:
-        """Send one message; yields events as the turn produces them. A message_id is generated if not given."""
-        message_id = message_id or uuid.uuid4().hex
-        if self._loop.run_until_complete(self._dispatcher.is_duplicate(conversation_id, message_id)):
-            raise DuplicateMessage(message_id)
+        """Send the next message of a conversation; yields events as the turn produces them.
+
+        Raises UnknownConversation or DuplicateMessage (from ap_transport.dispatcher) before running anything.
+        """
+        events = self._loop.run_until_complete(
+            self._dispatcher.send(conversation_id, message_id or uuid.uuid4().hex, text)
+        )
+        return self._drain(events)
+
+    def _drain(self, events: AsyncIterator[OutboundEvent]) -> Iterator[OutboundEvent]:
         # The whole turn runs in one task, feeding a queue this method drains. Driving the event
         # stream step by step from here would run each step in a new task, and tracing spans
         # must be opened and closed in the same one.
@@ -41,7 +48,7 @@ class LocalClient:
 
         async def run_turn() -> None:
             try:
-                async for event in self._dispatcher.send(conversation_id, message_id, text):
+                async for event in events:
                     queue.put_nowait(event)
             finally:
                 queue.put_nowait(None)

@@ -6,10 +6,10 @@
   "model_script": [[{"text": "Starting"}, {"error": "provider unavailable"}]],
   "requests": [
     {
-      "conversation_id": "c1",
+      "conversation": "A",
       "body": {"message_id": "m1", "text": "Hi"},
       "expect": {
-        "status": 200,
+        "status": 201,
         "events": [
           {"type": "token", "data": {"text": "Starting"}},
           {"type": "error"}

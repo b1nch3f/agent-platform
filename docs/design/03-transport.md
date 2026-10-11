@@ -15,9 +15,9 @@ Connects clients and remote agents to the platform over several protocols, and t
 | A2A server | Implements the A2A protocol directly (no third-party library): publishes agent cards, accepts tasks from remote agents, streams task status |
 | A2A client | Outbound delegation from the runtime to remote agents, after the delegation policy allows it |
 | Event bus (Kafka) | Ingress and egress for background agents: consumers read input topics and hand turns to the runtime; producers write results and events to output topics |
-| Session binding | Validates the identity token, resolves tenant and user, assigns the session\_id, attaches the session to a conversation, checks the entitlement to start the agent |
+| Session binding | Validates the identity token, resolves tenant and user, checks the conversation belongs to that caller, checks the entitlement to start the agent |
 | Turn normalizer | Converts every protocol's message, and every Kafka event, into one turn envelope |
-| Event fan-out | Delivers runtime events to every session connected to the conversation, so all devices stay in sync, with a resume cursor; for background agents, writes them to output topics |
+| Event fan-out | Delivers runtime events to every connection reading the conversation, so all devices stay in sync, with a resume cursor; for background agents, writes them to output topics |
 
 ## Two ingress modes
 
@@ -41,17 +41,20 @@ The transport is decoupled from the runtime: whichever path a message takes, the
 
 ## Identifiers
 
-The transport layer owns the identifiers that tie connections, conversations and runs together.
+The transport layer owns the conversation: it issues the conversation's identifier and delivers its events. The runtime owns the runs.
 
 | ID | Identifies | Created by |
 | --- | --- | --- |
-| `session_id` | One connection from one device. A user on a phone and a laptop has two sessions | Transport, at connect |
-| `conversation_id` | The thread of messages, shared by every device the user continues it on | Transport, on the first message, or supplied by the client to continue a thread |
+| `conversation_id` | The thread of messages, shared by every device the user continues it on | Transport only, when the first message arrives. It is returned to the client, which must send it with every later message |
 | `message_id` | One user message, which starts one turn | The client, so double-sends can be deduplicated; validated by the transport |
-| `invocation_id` | One run of an agent or workflow: each invoke, and each resume of a suspended one | Transport for the top-level run of a message; runtime for nested invocations and resumes |
+| `invocation_id` | One run of an agent or workflow: each invoke, and each resume of a suspended one | Runtime, when the run starts. `invocation_type` (`agent` or `workflow`) says what it runs; the two are otherwise handled alike. A nested run records its parent's ID |
 | `execution_id` | One durable run of a workflow or sub-agent, across all its invocations until it completes | Runtime, at the first invoke |
 
-A conversation holds messages, each message triggers one or more invocations, and a session is one device's view of the conversation. `execution_id` stays the same across invocations: a purchase started by message 1 and resumed by message 4 is one execution with two invocations. That stable ID is what the node cache and frames are keyed on, since `invocation_id` changes on every resume.
+A conversation holds messages, and each message triggers one or more invocations. `execution_id` stays the same across invocations: a purchase started by message 1 and resumed by message 4 is one execution with two invocations. That stable ID is what the node cache and frames are keyed on, since `invocation_id` changes on every resume.
+
+**Conversation IDs are issued, never accepted.** A client starts a conversation by sending its first message without an ID; the transport creates the conversation, records the tenant and user who started it, and returns the ID with the response. A later message must name a conversation the transport issued to that same caller; any other ID is rejected (HTTP `404`) and nothing runs. Starting and continuing are separate calls, so a client that forgets the ID cannot silently begin a new conversation.
+
+There is no per-connection identifier. A connection is not addressed by anything in the platform: events are delivered to whoever is reading the conversation and resumed by cursor.
 
 The Agent SDK uses these identifiers directly: conversation state is keyed by `conversation_id`, and every run of the agent loop or workflow executor carries an `invocation_id`.
 
@@ -60,9 +63,7 @@ The Agent SDK uses these identifiers directly: conversation state is keyed by `c
 ```python
 class TurnEnvelope(BaseModel):
     message_id: str            # client-generated; deduplicates double-sends
-    conversation_id: str
-    session_id: str            # the device connection it arrived on
-    invocation_id: str         # top-level run for this message
+    conversation_id: str       # issued by the transport
     protocol: Literal["websocket", "http_sse", "a2a", "kafka", "local"]
     identity: CallIdentity     # user or calling agent, tenant
     kind: Literal["message", "decision", "cancel"]
@@ -72,7 +73,8 @@ class TurnEnvelope(BaseModel):
 class OutboundEvent(BaseModel):
     conversation_id: str
     message_id: str
-    invocation_id: str | None
+    invocation_id: str | None  # created by the runtime; None before any run has started
+    invocation_type: Literal["agent", "workflow"] | None
     cursor: int                # increases monotonically per conversation
     type: Literal["token", "tool_status", "pending_updated",
                   "approval_request", "turn_done", "error"]
@@ -107,7 +109,7 @@ A remote agent answers an input-required task by sending a message on the same t
 
 | Interface | Shape |
 | --- | --- |
-| WebSocket | One connection per client session; JSON messages using `TurnEnvelope` and `OutboundEvent` |
+| WebSocket | One connection per client; JSON messages using `TurnEnvelope` and `OutboundEvent` |
 | HTTP + SSE | Post a turn; the response is an SSE stream of `OutboundEvent`s |
 | A2A | Agent cards for published agents; task send, stream and status per the A2A protocol |
 | Depends on | Identity provider; Builder Canvas entitlements; governance delegation policy; runtime |

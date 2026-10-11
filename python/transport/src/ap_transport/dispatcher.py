@@ -1,7 +1,8 @@
 """The transport's core, independent of any network protocol (docs/design/03).
 
-Owns the identifiers that tie connections, conversations and runs together, normalizes each
-message into a TurnEnvelope, and stamps the runtime's events for delivery. It makes no decisions.
+Issues conversation IDs, checks that a message belongs to a conversation it issued and is not a
+repeat, normalizes each message into a TurnEnvelope, and stamps the runtime's events with the
+conversation's cursor for delivery. It makes no decisions.
 The HTTP app and the in-process client are both thin layers over it.
 """
 
@@ -16,7 +17,7 @@ from typing import Literal
 from opentelemetry import trace
 
 from ap_contracts import CallIdentity, OutboundEvent, TurnEnvelope
-from ap_sdk import Runtime
+from ap_sdk import Runtime, RuntimeEvent
 
 # MVP: a fixed identity. Session binding (token, tenant, entitlement) replaces it with governance.
 DEV_IDENTITY = CallIdentity(tenant="dev", user_id="dev-user")
@@ -34,25 +35,32 @@ class ConversationChannel:
         self.buffer: deque[OutboundEvent] = deque(maxlen=REPLAY_BUFFER_SIZE)
         self.lock = asyncio.Lock()
 
-    def stamp(
-        self, envelope: TurnEnvelope, type: str, data: dict, invocation_id: str | None
-    ) -> OutboundEvent:
+    def stamp(self, envelope: TurnEnvelope, event: RuntimeEvent, data: dict) -> OutboundEvent:
         self.cursor += 1
-        event = OutboundEvent(
+        outbound = OutboundEvent(
             conversation_id=envelope.conversation_id,
             message_id=envelope.message_id,
-            invocation_id=invocation_id,
+            invocation_id=event.invocation_id,
+            invocation_type=event.invocation_type,
             cursor=self.cursor,
-            type=type,
+            type=event.type,
             data=data,
         )
-        self.buffer.append(event)
-        return event
+        self.buffer.append(outbound)
+        return outbound
 
 
 def current_trace_id() -> str | None:
     span_context = trace.get_current_span().get_span_context()
     return format(span_context.trace_id, "032x") if span_context.is_valid else None
+
+
+class UnknownConversation(Exception):
+    """The conversation was not issued by this transport, or belongs to another caller."""
+
+
+class DuplicateMessage(Exception):
+    """This message_id was already sent in the conversation."""
 
 
 class Dispatcher:
@@ -65,21 +73,34 @@ class Dispatcher:
     def _channel_for(self, conversation_id: str) -> ConversationChannel:
         return self._channels.setdefault(conversation_id, ConversationChannel())
 
-    @staticmethod
-    def new_conversation_id() -> str:
-        return uuid.uuid4().hex
+    @property
+    def _owner(self) -> dict[str, str]:
+        return {"tenant": self._identity.tenant, "user_id": self._identity.user_id}
 
-    async def is_duplicate(self, conversation_id: str, message_id: str) -> bool:
-        """True if this message_id was already sent in the conversation."""
-        return await self.runtime.store.has_message(conversation_id, message_id)
+    async def start(self, message_id: str, text: str) -> tuple[str, AsyncIterator[OutboundEvent]]:
+        """Start a conversation with its first message. Returns the new conversation's ID and
+        the turn's events. Conversation IDs are only ever created here."""
+        conversation_id = uuid.uuid4().hex
+        await self.runtime.store.create(conversation_id, **self._owner)
+        return conversation_id, self._run(conversation_id, message_id, text)
 
     async def send(self, conversation_id: str, message_id: str, text: str) -> AsyncIterator[OutboundEvent]:
-        """Run one turn for a user message and yield its events, stamped with the conversation's cursor."""
+        """Continue a conversation. Raises UnknownConversation or DuplicateMessage before any
+        event is produced, so a caller can reject the request outright."""
+        await self.check_conversation(conversation_id)
+        if await self.runtime.store.has_message(conversation_id, message_id):
+            raise DuplicateMessage(message_id)
+        return self._run(conversation_id, message_id, text)
+
+    async def check_conversation(self, conversation_id: str) -> None:
+        if not await self.runtime.store.exists(conversation_id, **self._owner):
+            raise UnknownConversation(conversation_id)
+
+    async def _run(self, conversation_id: str, message_id: str, text: str) -> AsyncIterator[OutboundEvent]:
+        """Run one turn and yield its events, stamped with the conversation's cursor."""
         envelope = TurnEnvelope(
             message_id=message_id,
             conversation_id=conversation_id,
-            session_id=uuid.uuid4().hex,  # one per connection
-            invocation_id=uuid.uuid4().hex,  # the top-level run for this message
             protocol=self._protocol,
             identity=self._identity,
             kind="message",
@@ -92,8 +113,9 @@ class Dispatcher:
                 data = dict(event.data)
                 if event.type == "turn_done" and trace_id:
                     data["trace_id"] = trace_id
-                yield channel.stamp(envelope, event.type, data, event.invocation_id)
+                yield channel.stamp(envelope, event, data)
 
-    def replay(self, conversation_id: str, after_cursor: int = 0) -> list[OutboundEvent]:
+    async def replay(self, conversation_id: str, after_cursor: int = 0) -> list[OutboundEvent]:
         """Buffered events after a cursor, for a client that lost its stream."""
+        await self.check_conversation(conversation_id)
         return [e for e in self._channel_for(conversation_id).buffer if e.cursor > after_cursor]

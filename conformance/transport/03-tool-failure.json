@@ -9,10 +9,10 @@
   ],
   "requests": [
     {
-      "conversation_id": "c1",
+      "conversation": "A",
       "body": {"message_id": "m1", "text": "Weather in Atlantis?"},
       "expect": {
-        "status": 200,
+        "status": 201,
         "events": [
           {"type": "tool_status", "data": {"tool_call_id": "tc1", "tool": "get_weather", "status": "started"}},
           {"type": "tool_status", "data": {"tool_call_id": "tc1", "tool": "get_weather", "status": "failed"}},

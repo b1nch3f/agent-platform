@@ -19,6 +19,7 @@ class CallContext(BaseModel):
     conversation_id: str
     message_id: str
     invocation_id: str
+    invocation_type: Literal["agent", "workflow"] = Field(..., description="What the invocation runs.")
     agent: str
     agent_version: str
 

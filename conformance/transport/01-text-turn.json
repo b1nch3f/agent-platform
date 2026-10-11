@@ -6,10 +6,10 @@
   "model_script": [[{"text": "Hello"}, {"text": ", world."}]],
   "requests": [
     {
-      "conversation_id": "c1",
+      "conversation": "A",
       "body": {"message_id": "m1", "text": "Hi"},
       "expect": {
-        "status": 200,
+        "status": 201,
         "events": [
           {"type": "token", "data": {"text": "Hello"}},
           {"type": "token", "data": {"text": ", world."}},
