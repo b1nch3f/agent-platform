@@ -1,4 +1,3 @@
-from ap_transport.client import Client
 from conftest import events_of, make_client
 
 
@@ -83,10 +82,11 @@ async def test_create_conversation_and_health():
     assert health.json() == {"status": "ok", "agent": "test-agent", "version": "1.0.0"}
 
 
-def test_client_sends_a_message_and_parses_the_stream():
-    """The sync client SDK against the app, over a real socket."""
+def test_served_over_a_real_socket():
+    """The app under uvicorn, reached the way curl or a frontend would reach it."""
     import threading
 
+    import httpx
     import uvicorn
 
     from ap_contracts import AgentDefinition
@@ -103,16 +103,16 @@ def test_client_sends_a_message_and_parses_the_stream():
         while not server.started:
             pass
         port = server.servers[0].sockets[0].getsockname()[1]
-        client = Client(f"http://127.0.0.1:{port}")
 
-        conversation_id = client.create_conversation()
-        events = list(client.send(conversation_id, "ping"))
+        response = httpx.post(
+            f"http://127.0.0.1:{port}/conversations/c1/messages", json={"message_id": "m1", "text": "ping"}
+        )
 
-        assert [(e.type, e.data) for e in events] == [
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert [(e.type, e.data) for e in events_of(response)] == [
             ("token", {"text": "pong"}),
             ("turn_done", {"stop_reason": "end_turn"}),
         ]
-        assert events[0].conversation_id == conversation_id
     finally:
         server.should_exit = True
         thread.join(timeout=5)

@@ -16,8 +16,8 @@ class DuplicateMessage(Exception):
 
 
 class LocalClient:
-    """Same interface as the HTTP `Client`, backed by the same Dispatcher the HTTP app uses,
-    so identifiers, cursors and event order are identical in both modes."""
+    """Backed by the same Dispatcher the HTTP app uses, so identifiers, cursors and event
+    order are identical whether an agent runs locally or is served."""
 
     def __init__(self, runtime: Runtime):
         self._dispatcher = Dispatcher(runtime, protocol="local")
