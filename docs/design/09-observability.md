@@ -59,7 +59,7 @@ class EpisodeFriction(BaseModel):
 | Context and features | CDC lag, summarization jobs, icebreaker question refresh lag, icebreaker questions shown, clicked and dismissed |
 | Quality | Friction band mix and resolution rate per agent and version |
 
-Labels are limited to tenant, agent, version, model, tool, provider and outcome; never user, session, conversation, message, invocation or execution IDs.
+Labels are limited to tenant, agent, version, model, tool, provider and outcome; never user, conversation, message, invocation or execution IDs.
 
 ## Interfaces
 

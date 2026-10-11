@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from opentelemetry import trace
 
@@ -35,6 +36,8 @@ from ap_sdk.agent import Agent
 from ap_sdk.callbacks import Callbacks, invoke
 from ap_sdk.store import ConversationStore
 
+InvocationType = Literal["agent", "workflow"]
+
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer("ap_sdk")
 
@@ -45,7 +48,34 @@ class RuntimeEvent:
 
     type: str  # token | tool_status | turn_done | error
     data: dict[str, Any]
-    invocation_id: str | None = None
+    invocation_id: str | None = None  # None for an event produced before any invocation started
+    invocation_type: InvocationType | None = None
+
+
+@dataclass(frozen=True)
+class Invocation:
+    """One run of an agent or a workflow. The runtime creates it when the run starts.
+
+    Agents and workflows are run the same way and differ only in `type`.
+    """
+
+    id: str
+    type: InvocationType
+    name: str  # the agent or workflow being run
+    version: str
+    parent_id: str | None = None  # set for a nested run: a sub-agent, or a workflow's agent node
+
+    @classmethod
+    def start(
+        cls, type: InvocationType, name: str, version: str, parent: Invocation | None = None
+    ) -> Invocation:
+        return cls(
+            id=uuid.uuid4().hex,
+            type=type,
+            name=name,
+            version=version,
+            parent_id=parent.id if parent else None,
+        )
 
 
 @dataclass
@@ -54,6 +84,7 @@ class TurnContext:
 
     envelope: TurnEnvelope
     agent: Agent | None = None  # set by the turn router
+    invocation: Invocation | None = None  # the run in progress; set when the runtime starts one
     working_set: list[Message] = field(default_factory=list)  # in memory, for this turn only
     stop_reason: str | None = None
     state: dict[str, Any] = field(default_factory=dict)  # free for callbacks to use
@@ -62,13 +93,20 @@ class TurnContext:
     def conversation_id(self) -> str:
         return self.envelope.conversation_id
 
+    def event(self, type: str, data: dict[str, Any]) -> RuntimeEvent:
+        """An event stamped with the invocation in progress, if one has started."""
+        if self.invocation is None:
+            return RuntimeEvent(type, data)
+        return RuntimeEvent(type, data, self.invocation.id, self.invocation.type)
+
     def call_context(self) -> CallContext:
         return CallContext(
             tenant=self.envelope.identity.tenant,
             user_id=self.envelope.identity.user_id,
             conversation_id=self.envelope.conversation_id,
             message_id=self.envelope.message_id,
-            invocation_id=self.envelope.invocation_id,
+            invocation_id=self.invocation.id,
+            invocation_type=self.invocation.type,
             agent=self.agent.name,
             agent_version=self.agent.version,
         )
@@ -112,7 +150,7 @@ class Runtime:
             extra={
                 "conversation_id": ctx.conversation_id,
                 "message_id": ctx.envelope.message_id,
-                "invocation_id": ctx.envelope.invocation_id,
+                "invocation_id": ctx.invocation.id,
                 "stop_reason": ctx.stop_reason,
             },
         )
@@ -142,14 +180,17 @@ class Runtime:
                 yield event
 
             await callbacks.run("after_runtime", ctx)
-            yield RuntimeEvent("turn_done", {"stop_reason": ctx.stop_reason}, envelope.invocation_id)
+            yield ctx.event("turn_done", {"stop_reason": ctx.stop_reason})
         except Exception as exc:
             logger.exception(
                 "turn failed",
-                extra={"conversation_id": ctx.conversation_id, "invocation_id": envelope.invocation_id},
+                extra={
+                    "conversation_id": ctx.conversation_id,
+                    "invocation_id": ctx.invocation.id if ctx.invocation else None,
+                },
             )
             await callbacks.run("on_runtime_error", ctx, exc)
-            yield RuntimeEvent("error", {"message": f"{type(exc).__name__}: {exc}"}, envelope.invocation_id)
+            yield ctx.event("error", {"message": f"{type(exc).__name__}: {exc}"})
 
     async def _append(self, ctx: TurnContext, message: Message, message_id: str | None = None) -> None:
         await self.store.append(ctx.conversation_id, message, message_id=message_id)
@@ -157,6 +198,8 @@ class Runtime:
 
     async def _invoke_agent(self, ctx: TurnContext, callbacks: Callbacks) -> AsyncIterator[RuntimeEvent]:
         agent = ctx.agent
+        # The top-level run for this message. A nested run would pass ctx.invocation as its parent.
+        ctx.invocation = Invocation.start("agent", agent.name, agent.version)
         with tracer.start_as_current_span(f"invoke_agent {agent.name}") as span:
             span.set_attributes(
                 {
@@ -164,9 +207,9 @@ class Runtime:
                     "gen_ai.agent.name": agent.name,
                     "gen_ai.conversation.id": ctx.conversation_id,
                     "agent_platform.agent.version": agent.version,
-                    "agent_platform.invocation.id": ctx.envelope.invocation_id,
+                    "agent_platform.invocation.id": ctx.invocation.id,
+                    "agent_platform.invocation.type": ctx.invocation.type,
                     "agent_platform.message.id": ctx.envelope.message_id,
-                    "agent_platform.session.id": ctx.envelope.session_id,
                     "agent_platform.tenant": ctx.envelope.identity.tenant,
                 }
             )
@@ -183,7 +226,6 @@ class Runtime:
 
     async def _agent_loop(self, ctx: TurnContext, callbacks: Callbacks) -> AsyncIterator[RuntimeEvent]:
         definition = ctx.agent.definition
-        invocation_id = ctx.envelope.invocation_id
         tool_specs = [tool.spec() for tool in ctx.agent.tools]
 
         for _ in range(definition.max_steps):
@@ -209,7 +251,7 @@ class Runtime:
                             blocks[-1].text += event.text
                         else:
                             blocks.append(TextBlock(text=event.text))
-                        yield RuntimeEvent("token", {"text": event.text}, invocation_id)
+                        yield ctx.event("token", {"text": event.text})
                     elif isinstance(event, ToolCall):
                         tool_calls.append(event)
                         blocks.append(ToolCallBlock(id=event.id, name=event.name, arguments=event.arguments))
@@ -233,20 +275,16 @@ class Runtime:
             # Tool calls. Every call gets a result, so the history stays valid for the next model call.
             if done.stop_reason == "tool_use":
                 for call in tool_calls:
-                    yield RuntimeEvent(
-                        "tool_status",
-                        {"tool_call_id": call.id, "tool": call.name, "status": "started"},
-                        invocation_id,
+                    yield ctx.event(
+                        "tool_status", {"tool_call_id": call.id, "tool": call.name, "status": "started"}
                     )
                 results = await asyncio.gather(
                     *(self._call_tool(ctx, callbacks, call) for call in tool_calls)
                 )
                 for call, result in zip(tool_calls, results):
                     status = "failed" if result.is_error else "completed"
-                    yield RuntimeEvent(
-                        "tool_status",
-                        {"tool_call_id": call.id, "tool": call.name, "status": status},
-                        invocation_id,
+                    yield ctx.event(
+                        "tool_status", {"tool_call_id": call.id, "tool": call.name, "status": status}
                     )
             else:
                 # The output was cut off (max_tokens) or declined (refusal): the arguments cannot be trusted.

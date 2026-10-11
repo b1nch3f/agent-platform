@@ -5,13 +5,56 @@
   "description": "One event streamed back to the client. See docs/design/03-transport.md.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["conversation_id", "message_id", "cursor", "type", "data"],
+  "required": [
+    "conversation_id",
+    "message_id",
+    "cursor",
+    "type",
+    "data"
+  ],
   "properties": {
-    "conversation_id": { "type": "string", "minLength": 1 },
-    "message_id": { "type": "string", "minLength": 1 },
-    "invocation_id": { "type": ["string", "null"], "default": null },
-    "cursor": { "type": "integer", "minimum": 1, "description": "Increases monotonically per conversation." },
-    "type": { "enum": ["token", "tool_status", "pending_updated", "approval_request", "turn_done", "error"] },
-    "data": { "type": "object" }
+    "conversation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "message_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "invocation_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null,
+      "description": "The run that produced the event, created by the runtime. Null for an event produced before any run started."
+    },
+    "invocation_type": {
+      "enum": [
+        "agent",
+        "workflow",
+        null
+      ],
+      "default": null,
+      "description": "What that invocation runs. Null when invocation_id is null."
+    },
+    "cursor": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Increases monotonically per conversation."
+    },
+    "type": {
+      "enum": [
+        "token",
+        "tool_status",
+        "pending_updated",
+        "approval_request",
+        "turn_done",
+        "error"
+      ]
+    },
+    "data": {
+      "type": "object"
+    }
   }
 }

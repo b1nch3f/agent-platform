@@ -9,10 +9,10 @@
   ],
   "requests": [
     {
-      "conversation_id": "c1",
+      "conversation": "A",
       "body": {"message_id": "m1", "text": "Weather in Pune?"},
       "expect": {
-        "status": 200,
+        "status": 201,
         "events": [
           {"type": "token", "data": {"text": "Let me check. "}},
           {"type": "tool_status", "data": {"tool_call_id": "tc1", "tool": "get_weather", "status": "started"}},

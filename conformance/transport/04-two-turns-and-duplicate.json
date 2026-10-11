@@ -6,10 +6,10 @@
   "model_script": [[{"text": "One."}], [{"text": "Two."}]],
   "requests": [
     {
-      "conversation_id": "c1",
+      "conversation": "A",
       "body": {"message_id": "m1", "text": "First"},
       "expect": {
-        "status": 200,
+        "status": 201,
         "events": [
           {"type": "token", "data": {"text": "One."}},
           {"type": "turn_done", "data": {"stop_reason": "end_turn"}}
@@ -17,12 +17,12 @@
       }
     },
     {
-      "conversation_id": "c1",
+      "conversation": "A",
       "body": {"message_id": "m1", "text": "First, sent again"},
       "expect": {"status": 409}
     },
     {
-      "conversation_id": "c1",
+      "conversation": "A",
       "body": {"message_id": "m2", "text": "Second"},
       "expect": {
         "status": 200,

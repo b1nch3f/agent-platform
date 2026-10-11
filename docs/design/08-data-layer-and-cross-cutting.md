@@ -21,10 +21,9 @@ Removed during design: a graph database, Redis-first frame tiering, and LiteLLM.
 | ID | Created by | Used by |
 | --- | --- | --- |
 | `tenant`, user hash | Identity | Everything |
-| `session_id` | Transport, per connected device | Event delivery, observability |
-| `conversation_id` | Transport, on the first message | Runtime (frames, pending items), context, features, observability |
+| `conversation_id` | Transport only, on the first message; never supplied new by a client | Runtime (frames, pending items), context, features, observability |
 | `message_id` | Client, validated by transport | Runtime (deduplication), context, features, observability |
-| `invocation_id` | Transport for the top-level run; runtime for nested runs and resumes | Runtime, gateway, observability |
+| `invocation_id`, `invocation_type` | Runtime, for every run of an agent or workflow, top-level or nested | Runtime, gateway, observability |
 | `execution_id`, `root_exec_id` | Runtime | Node cache, frames, gateway, Builder Canvas (revocation) |
 | Node key, `idempotency_key` | Runtime | External systems |
 | `frame_id`, `action_id` | Runtime | Approvals, audit |

@@ -343,3 +343,53 @@ def test_agent_rejects_tools_that_do_not_match_the_definition():
     )
     with pytest.raises(ValueError, match="declares tools"):
         Agent(definition=definition, tools=[add])
+
+
+async def test_runtime_creates_one_invocation_per_agent_run():
+    seen = []
+    callbacks = Callbacks(before_agent=[lambda ctx: seen.append(ctx.invocation)])
+    runtime, model = scripted_runtime(
+        make_agent(add, callbacks=callbacks), [[call("add", a=1, b=2)], [{"text": "3"}], [{"text": "again"}]]
+    )
+
+    first = await run_turn(runtime, "go")
+    second = await run_turn(runtime, "go again")
+
+    invocation = seen[0]
+    assert (invocation.type, invocation.name, invocation.version, invocation.parent_id) == (
+        "agent",
+        "test-agent",
+        "1.0.0",
+        None,
+    )
+    # Every event of the turn, and every gateway call, carries that invocation.
+    assert {(e.invocation_id, e.invocation_type) for e in first} == {(invocation.id, "agent")}
+    assert {(r.context.invocation_id, r.context.invocation_type) for r in model.requests[:2]} == {
+        (invocation.id, "agent")
+    }
+    # A new message is a new invocation.
+    assert second[0].invocation_id not in (None, invocation.id)
+
+
+async def test_event_before_any_invocation_has_no_invocation_id():
+    def refuse(ctx):
+        raise PermissionError("not today")
+
+    runtime, model = scripted_runtime(make_agent(callbacks=Callbacks(before_runtime=[refuse])), [])
+
+    events = await run_turn(runtime, "go")
+
+    assert [(e.type, e.invocation_id, e.invocation_type) for e in events] == [("error", None, None)]
+    assert model.requests == []
+
+
+async def test_turn_for_a_conversation_that_was_never_created_is_an_error():
+    from ap_sdk.testing import make_envelope
+
+    runtime, model = scripted_runtime(make_agent(), [[{"text": "a"}]])
+
+    events = [e async for e in runtime.run_turn(make_envelope("hi", conversation_id="never-created"))]
+
+    assert [e.type for e in events] == ["error"]
+    assert "UnknownConversationError" in events[0].data["message"]
+    assert model.requests == []

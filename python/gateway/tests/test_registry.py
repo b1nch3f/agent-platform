@@ -10,6 +10,7 @@ CONTEXT = CallContext(
     conversation_id="c1",
     message_id="m1",
     invocation_id="i1",
+    invocation_type="agent",
     agent="a",
     agent_version="1",
 )

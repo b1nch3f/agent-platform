@@ -35,14 +35,15 @@ def scripted_runtime(
     return runtime, model
 
 
+TEST_IDENTITY = CallIdentity(tenant="test", user_id="test-user")
+
+
 def make_envelope(text: str, *, conversation_id: str = "c1", message_id: str | None = None) -> TurnEnvelope:
     return TurnEnvelope(
         message_id=message_id or uuid.uuid4().hex,
         conversation_id=conversation_id,
-        session_id="test-session",
-        invocation_id=uuid.uuid4().hex,
-        protocol="http_sse",
-        identity=CallIdentity(tenant="test", user_id="test-user"),
+        protocol="local",
+        identity=TEST_IDENTITY,
         kind="message",
         payload={"text": text},
     )
@@ -51,7 +52,10 @@ def make_envelope(text: str, *, conversation_id: str = "c1", message_id: str | N
 async def run_turn(
     runtime: Runtime, text: str, *, conversation_id: str = "c1", message_id: str | None = None
 ) -> list[RuntimeEvent]:
-    """Run one turn to the end and return its events."""
+    """Run one turn to the end and return its events. The conversation is created on first use."""
+    identity = {"tenant": TEST_IDENTITY.tenant, "user_id": TEST_IDENTITY.user_id}
+    if not await runtime.store.exists(conversation_id, **identity):
+        await runtime.store.create(conversation_id, **identity)
     envelope = make_envelope(text, conversation_id=conversation_id, message_id=message_id)
     return [event async for event in runtime.run_turn(envelope)]
 

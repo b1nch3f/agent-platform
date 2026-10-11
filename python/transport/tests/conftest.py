@@ -27,7 +27,20 @@ def events_of(response: httpx.Response) -> list[OutboundEvent]:
 
 
 @pytest.fixture
+def start():
+    """Start a conversation with its first message. Returns (conversation_id, response)."""
+
+    async def start(client, message_id: str, text: str) -> tuple[str, httpx.Response]:
+        response = await client.post("/conversations", json={"message_id": message_id, "text": text})
+        return response.headers.get("x-conversation-id"), response
+
+    return start
+
+
+@pytest.fixture
 def post():
+    """Send the next message of an existing conversation."""
+
     async def post(client, conversation_id: str, message_id: str, text: str) -> httpx.Response:
         return await client.post(
             f"/conversations/{conversation_id}/messages", json={"message_id": message_id, "text": text}

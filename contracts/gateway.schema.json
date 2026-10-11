@@ -16,6 +16,7 @@
         "conversation_id",
         "message_id",
         "invocation_id",
+        "invocation_type",
         "agent",
         "agent_version"
       ],
@@ -34,6 +35,13 @@
         },
         "invocation_id": {
           "type": "string"
+        },
+        "invocation_type": {
+          "enum": [
+            "agent",
+            "workflow"
+          ],
+          "description": "What the invocation runs."
         },
         "agent": {
           "type": "string"
