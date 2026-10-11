@@ -51,7 +51,9 @@ contracts/     JSON Schema, the single definition of every data model and wire f
                generate.sh produces the language models, which are committed
 python/        uv workspace
   contracts/   generated pydantic models (ap_contracts) - do not edit
-  gateway/     pass-through model and tool gateway, Anthropic adapter, scripted fake model (ap_gateway)
+  gateway/     pass-through model and tool gateway, model registry, one adapter per provider
+               (Anthropic, Gemini), scripted fake model (ap_gateway)
+  models.yaml  model registry: which provider serves each model name an agent may use
   sdk/         Agent SDK: runtime kernel, tools, callbacks, conversation store, test helpers (ap_sdk)
   transport/   protocol-independent dispatcher, HTTP + SSE app, in-process client, agent-platform CLI (ap_transport)
 java/          Gradle multi-module, same module names - not created yet
@@ -89,7 +91,7 @@ Run from `python/` unless noted.
 | Install | `uv sync` |
 | Test (fake model, no API key) | `uv run pytest` |
 | One test file | `uv run pytest sdk/tests/test_runtime.py` |
-| Live test against the real model | `uv run pytest -m live` (key from `python/.env`; costs money) |
+| Live test against the real model | `uv run pytest -m live` (runs the example agent's model with the key from `python/.env`; uses paid or rate-limited quota, so run it sparingly) |
 | Lint and format | `uv run ruff check . ../agents` and `uv run ruff format . ../agents` |
 | Regenerate contract models | `./contracts/generate.sh` from the repo root, after any schema change |
 | Run an agent locally and talk to it | `uv run agent-platform chat --agent ../agents/example/agent.yaml` |
@@ -101,3 +103,9 @@ Run from `python/` unless noted.
 - Tests use `ScriptedModel`, a fake model that replays a script, through the helpers in `ap_sdk.testing`. See `agents/example/test_agent.py` for how to test an agent.
 - A behaviour that both languages must share goes in `conformance/` as data, not only in a Python test.
 - MVP gaps against the rules above are listed in ADR 0002; do not add new ones without updating it.
+
+## Models and providers
+
+- An agent's `model:` must be a name in `python/models.yaml`. The agent never names a provider.
+- A new provider is one adapter file in `python/gateway/src/ap_gateway/` using that provider's own SDK, one entry in `PROVIDERS` in `registry.py`, and tests for its message translation. Nothing outside the gateway changes.
+- An adapter must return a turn's provider-native content in a `ProviderBlock` when the provider requires it to be replayed unchanged (reasoning blocks, thought signatures).

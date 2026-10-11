@@ -3,7 +3,7 @@
 name: weather-assistant
 version: "0.1.0"
 description: Answers questions about the weather in a few Indian cities.
-model: claude-haiku-5-5
+model: gemini-3.8-flash
 instructions: |
   You are a concise weather assistant. Use the get_weather tool for any question about
   current weather; never guess a temperature. If the tool has no data for a city, say so.

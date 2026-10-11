@@ -34,15 +34,26 @@ class LocalClient:
         message_id = message_id or uuid.uuid4().hex
         if self._loop.run_until_complete(self._dispatcher.is_duplicate(conversation_id, message_id)):
             raise DuplicateMessage(message_id)
-        events = self._dispatcher.send(conversation_id, message_id, text)
+        # The whole turn runs in one task, feeding a queue this method drains. Driving the event
+        # stream step by step from here would run each step in a new task, and tracing spans
+        # must be opened and closed in the same one.
+        queue: asyncio.Queue[OutboundEvent | None] = asyncio.Queue()
+
+        async def run_turn() -> None:
+            try:
+                async for event in self._dispatcher.send(conversation_id, message_id, text):
+                    queue.put_nowait(event)
+            finally:
+                queue.put_nowait(None)
+
+        turn = self._loop.create_task(run_turn())
         try:
-            while True:
-                try:
-                    yield self._loop.run_until_complete(anext(events))
-                except StopAsyncIteration:
-                    return
+            while (event := self._loop.run_until_complete(queue.get())) is not None:
+                yield event
         finally:
-            self._loop.run_until_complete(events.aclose())
+            if not turn.done():  # the caller stopped reading early
+                turn.cancel()
+            self._loop.run_until_complete(asyncio.gather(turn, return_exceptions=True))
 
     def close(self) -> None:
         self._loop.close()

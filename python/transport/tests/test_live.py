@@ -5,28 +5,19 @@ from pathlib import Path
 import httpx
 import pytest
 
-from ap_gateway import ModelGateway, ToolGateway
-from ap_sdk import InMemoryConversationStore, Runtime, load_agent
 from ap_transport.app import create_app
 from conftest import events_of
 
 EXAMPLE_AGENT = Path(__file__).parents[3] / "agents" / "example" / "agent.yaml"
+MODELS = Path(__file__).parents[2] / "models.yaml"
 
 
 @pytest.mark.live
 async def test_example_agent_answers_with_the_real_model():
-    from dotenv import find_dotenv, load_dotenv
+    from ap_transport.cli import build_runtime
 
-    from ap_gateway.anthropic_adapter import AnthropicAdapter
-
-    load_dotenv(find_dotenv(usecwd=True), override=True)  # same key the server uses
-
-    runtime = Runtime(
-        agent=load_agent(EXAMPLE_AGENT),
-        model_gateway=ModelGateway(default=AnthropicAdapter()),
-        tool_gateway=ToolGateway(),
-        store=InMemoryConversationStore(),
-    )
+    # The example agent's model, through the registry and the key in .env, as the CLI runs it.
+    runtime = build_runtime(str(EXAMPLE_AGENT), str(MODELS))
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(runtime)), base_url="http://test")
 
     first = events_of(

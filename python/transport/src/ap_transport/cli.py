@@ -41,12 +41,11 @@ def configure_logging(handler: logging.Handler) -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
-def build_runtime(agent_path: str) -> Runtime:
-    """Wire an agent to the real model. Both commands run the agent through this."""
+def build_runtime(agent_path: str, models_path: str) -> Runtime:
+    """Wire an agent to the registered models. Both commands run the agent through this."""
     from dotenv import find_dotenv, load_dotenv
 
-    from ap_gateway import ModelGateway, ToolGateway
-    from ap_gateway.anthropic_adapter import AnthropicAdapter
+    from ap_gateway import ModelGateway, ModelRegistry, ToolGateway
     from ap_sdk import InMemoryConversationStore, load_agent
 
     # Nearest .env from the current directory upwards. It wins over variables set in the shell.
@@ -54,7 +53,7 @@ def build_runtime(agent_path: str) -> Runtime:
 
     return Runtime(
         agent=load_agent(agent_path),
-        model_gateway=ModelGateway(default=AnthropicAdapter()),
+        model_gateway=ModelGateway(ModelRegistry.from_file(models_path)),
         tool_gateway=ToolGateway(),
         store=InMemoryConversationStore(),
     )
@@ -66,7 +65,9 @@ def serve(args: argparse.Namespace) -> None:
     from ap_transport.app import create_app
 
     configure_logging(logging.StreamHandler())
-    uvicorn.run(create_app(build_runtime(args.agent)), host=args.host, port=args.port, log_config=None)
+    uvicorn.run(
+        create_app(build_runtime(args.agent, args.models)), host=args.host, port=args.port, log_config=None
+    )
 
 
 class ChatClient(Protocol):
@@ -91,17 +92,21 @@ def run_chat(client: ChatClient, *, read: Callable[[str], str] = input, out: Tex
         if not text:
             continue
         show("agent> ")
+        after_note = False  # the last thing printed was a bracketed note on its own line
         for event in client.send(conversation_id, text):
             if event.type == "token":
-                show(event.data["text"])
-            elif event.type == "tool_status":
+                show(("\n" if after_note else "") + event.data["text"])
+                after_note = False
+                continue
+            if event.type == "tool_status":
                 show(f"\n  [{event.data['tool']}: {event.data['status']}]")
-                if event.data["status"] != "started":
-                    show("\n")
             elif event.type == "error":
                 show(f"\n  [error: {event.data['message']}]")
             elif event.type == "turn_done" and event.data.get("trace_id"):
                 show(f"\n  [trace {event.data['trace_id']}]")
+            else:
+                continue
+            after_note = True
         show("\n")
 
 
@@ -110,7 +115,7 @@ def chat(args: argparse.Namespace) -> None:
 
     # Logs would land in the middle of the conversation, so they go to a file or nowhere.
     configure_logging(logging.FileHandler(args.log_file) if args.log_file else logging.NullHandler())
-    runtime = build_runtime(args.agent)
+    runtime = build_runtime(args.agent, args.models)
     agent = runtime.root_agent
     print(f"{agent.name} {agent.version} ({agent.definition.model}), running locally. Ctrl-D to quit.")
     client = LocalClient(runtime)
@@ -134,6 +139,11 @@ def main() -> None:
     serve_parser.add_argument("--host", default="127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=8000)
     serve_parser.set_defaults(run=serve)
+
+    for command in (chat_parser, serve_parser):
+        command.add_argument(
+            "--models", default="models.yaml", help="Model registry file (default: models.yaml here)"
+        )
 
     args = parser.parse_args()
     args.run(args)

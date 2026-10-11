@@ -14,7 +14,8 @@ The MVP is built in Python only. The transport and the Agent SDK will later also
 | Model and tool gateways | Java services | In-process Python module (`python/gateway`), pass-through; the runtime still makes every model and tool call through it |
 | Context | Java service owning conversation history | A `ConversationStore` interface in the Agent SDK with an in-memory implementation |
 | Identity | Identity provider, token exchange | A fixed dev identity (`tenant=dev`, `user_id=dev-user`) set by the transport |
-| Model provider key | Vault reference | `ANTHROPIC_API_KEY` from the environment, read by the Anthropic adapter |
+| Model provider keys | Vault references | `ANTHROPIC_API_KEY` and `GEMINI_API_KEY` from `python/.env` or the environment, read by each provider's adapter |
+| Model registry | Admin-managed registry: provider, endpoint, credentials, price, capabilities | `python/models.yaml`: model name to provider and provider model id. One adapter per provider, each using that provider's own SDK |
 | Agent SDK languages | Python | Python now; Java later. Whether the Java SDK is a client and tool SDK or a full second runtime is open |
 
 Repository layout follows from having two implementations of the same components:

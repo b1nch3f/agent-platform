@@ -128,3 +128,26 @@ def test_chat_loop_shows_a_failed_turn_and_keeps_going():
     run_chat(client, read=scripted_input("one", "two"), out=out)
 
     assert out.getvalue() == "agent> \n  [error: RuntimeError: provider down]\nagent> Back.\n\n"
+
+
+def test_local_turn_logs_no_tracing_errors(caplog):
+    """Spans opened during a turn must be closed in the same task, or the tracing library logs an error."""
+    client, _ = make_local(
+        [[{"tool_call": {"name": "get_weather", "arguments": {"city": "Pune"}}}], [{"text": "29C."}]],
+        get_weather,
+    )
+
+    with caplog.at_level("ERROR"):
+        list(client.send("c1", "Weather?"))
+
+    assert [r.getMessage() for r in caplog.records] == []
+
+
+def test_local_stream_can_be_abandoned_midway():
+    client, _ = make_local([[{"text": "a"}, {"text": "b"}], [{"text": "next"}]])
+
+    stream = client.send("c1", "go")
+    next(stream)
+    stream.close()
+
+    assert [e.type for e in client.send("c1", "again")][-1] == "turn_done"
